@@ -24,16 +24,18 @@ from homeassistant.helpers.issue_registry import (
 )
 
 from .const import DOMAIN, LOGGER
+from .services import register_services
 
 if TYPE_CHECKING:
     from music_assistant_models.event import MassEvent
 
-type MusicAssistantConfigEntry = ConfigEntry[MusicAssistantEntryData]
 
 PLATFORMS = [Platform.MEDIA_PLAYER]
 
 CONNECT_TIMEOUT = 10
 LISTEN_READY_TIMEOUT = 30
+
+type MusicAssistantConfigEntry = ConfigEntry[MusicAssistantEntryData]
 
 
 @dataclass
@@ -97,7 +99,10 @@ async def async_setup_entry(
         listen_task.cancel()
         raise ConfigEntryNotReady("Music Assistant client not ready") from err
 
+    # store the listen task and mass client in the entry data
     entry.runtime_data = MusicAssistantEntryData(mass, listen_task)
+    # register our custom services
+    register_services(hass, mass)
 
     # If the listen task is already failed, we need to raise ConfigEntryNotReady
     if listen_task.done() and (listen_error := listen_task.exception()) is not None:
