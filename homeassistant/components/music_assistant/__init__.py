@@ -15,13 +15,14 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_URL, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
     async_delete_issue,
 )
+from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, LOGGER
 from .services import register_services
@@ -29,7 +30,7 @@ from .services import register_services
 if TYPE_CHECKING:
     from music_assistant_models.event import MassEvent
 
-
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = [Platform.MEDIA_PLAYER]
 
 CONNECT_TIMEOUT = 10
@@ -46,10 +47,17 @@ class MusicAssistantEntryData:
     listen_task: asyncio.Task
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Music Assistant component."""
+    # register our (custom) services
+    register_services(hass)
+    return True
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: MusicAssistantConfigEntry
 ) -> bool:
-    """Set up from a config entry."""
+    """Set up Music Assistant from a config entry."""
     http_session = async_get_clientsession(hass, verify_ssl=False)
     mass_url = entry.data[CONF_URL]
     mass = MusicAssistantClient(mass_url, http_session)
@@ -101,8 +109,6 @@ async def async_setup_entry(
 
     # store the listen task and mass client in the entry data
     entry.runtime_data = MusicAssistantEntryData(mass, listen_task)
-    # register our custom services
-    register_services(hass, mass)
 
     # If the listen task is already failed, we need to raise ConfigEntryNotReady
     if listen_task.done() and (listen_error := listen_task.exception()) is not None:
