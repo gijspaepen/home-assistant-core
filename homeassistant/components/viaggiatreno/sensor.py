@@ -88,7 +88,7 @@ async def async_http_request(hass, uri):
             return {"error": req.status}
         json_response = await req.json()
     except (TimeoutError, aiohttp.ClientError) as exc:
-        _LOGGER.error("Cannot connect to ViaggiaTreno API endpoint: %s", exc)
+        _LOGGER.error("Cannot connect to ViaggiaTreno API endpoint: %s", uri)
         return None
     except ValueError:
         _LOGGER.error("Received non-JSON data from ViaggiaTreno API endpoint")
@@ -105,14 +105,11 @@ class ViaggiaTrenoSensor(SensorEntity):
         """Initialize the sensor."""
         self._state = None
         self._attributes = {}
-        self._unit = ""
         self._icon = ICON
+        self._train_id = train_id
         self._station_id = station_id
         self._name = name
 
-        self.uri = VIAGGIATRENO_ENDPOINT.format(
-            station_id=station_id, train_id=train_id, timestamp=int(time.time()) * 1000
-        )
 
     @property
     def name(self):
@@ -128,11 +125,6 @@ class ViaggiaTrenoSensor(SensorEntity):
     def icon(self):
         """Icon to use in the frontend, if any."""
         return self._icon
-
-    @property
-    def native_unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return self._unit
 
     @property
     def extra_state_attributes(self):
@@ -167,30 +159,29 @@ class ViaggiaTrenoSensor(SensorEntity):
 
     async def async_update(self) -> None:
         """Update state."""
-        uri = self.uri
+        uri = VIAGGIATRENO_ENDPOINT.format(
+            station_id=self._station_id, train_id=self._train_id, timestamp=int(time.time()) * 1000
+            )
         res = await async_http_request(self.hass, uri)
-        if res.get("error", ""):
-            if res["error"] == 204:
-                self._state = NO_INFORMATION_STRING
-                self._unit = ""
+        if (res != None):
+            if res.get("error", ""):
+                if res["error"] == 204:
+                    self._state = NO_INFORMATION_STRING
+                else:
+                    self._state = f"Error: {res['error']}"
             else:
-                self._state = f"Error: {res['error']}"
-                self._unit = ""
+                for i in MONITORED_INFO:
+                    self._attributes[i] = res[i]
+    
+                if self.is_cancelled(res):
+                    self._state = CANCELLED_STRING
+                    self._icon = "mdi:cancel"
+                elif not self.has_departed(res):
+                    self._state = NOT_DEPARTED_STRING
+                elif self.has_arrived(res):
+                    self._state = ARRIVED_STRING
+                else:
+                    self._state = res.get("ritardo")
+                    self._icon = ICON
         else:
-            for i in MONITORED_INFO:
-                self._attributes[i] = res[i]
-
-            if self.is_cancelled(res):
-                self._state = CANCELLED_STRING
-                self._icon = "mdi:cancel"
-                self._unit = ""
-            elif not self.has_departed(res):
-                self._state = NOT_DEPARTED_STRING
-                self._unit = ""
-            elif self.has_arrived(res):
-                self._state = ARRIVED_STRING
-                self._unit = ""
-            else:
-                self._state = res.get("ritardo")
-                self._unit = UnitOfTime.MINUTES
-                self._icon = ICON
+            self._state = f"Error"
