@@ -39,7 +39,7 @@
   },
   "services": {
     "play_media": {
-      "name": "Play Media (advanced)",
+      "name": "Play media",
       "description": "Play media on a Music Assistant player with more fine grained control options.",
       "fields": {
         "media_id": {
@@ -63,13 +63,13 @@
           "description": "When specifying a track by name in the Media ID field, you can optionally restrict results by this album name."
         },
         "radio_mode": {
-          "name": "Enable Radio Mode",
+          "name": "Enable radio mode",
           "description": "Enable radio mode to auto generate a playlist based on the selection."
         }
       }
     },
     "play_announcement": {
-      "name": "Play Announcement (advanced)",
+      "name": "Play announcement",
       "description": "Play announcement on a Music Assistant player with more fine grained control options.",
       "fields": {
         "url": {
@@ -87,7 +87,7 @@
       }
     },
     "transfer_queue": {
-      "name": "Transfer Queue",
+      "name": "Transfer queue",
       "description": "Transfer the player's queue to another player.",
       "fields": {
         "source_player": {
@@ -129,6 +129,48 @@
           "description": "Only include results that are in the library."
         }
       }
+    },
+    "get_queue": {
+      "name": "Get playerQueue details (advanced)",
+      "description": "Get the full details of the currently active queue of a Music Assistant player."
+    },
+    "get_library": {
+      "name": "Get Library items",
+      "description": "Get items from a Music Assistant Library.",
+      "fields": {
+        "media_type": {
+          "name": "Media type",
+          "description": "The media type for which to request details for."
+        },
+        "favorite": {
+          "name": "Favorites only",
+          "description": "Filter items so only favorites items are returned."
+        },
+        "search": {
+          "name": "Search",
+          "description": "Optional search string to search through this library."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of items to return."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "Offset to start the list from."
+        },
+        "order_by": {
+          "name": "Order By",
+          "description": "Sort the list by this field."
+        },
+        "album_type": {
+          "name": "Album type filter (albums library only)",
+          "description": "Filter albums by type."
+        },
+        "album_artists_only": {
+          "name": "Enable album artists filter (only for artist library)",
+          "description": "Only return Album Artists when listing the Artists library items."
+        }
+      }
     }
   },
   "selector": {
@@ -139,6 +181,46 @@
         "add": "Add to queue",
         "replace": "Play now and clear queue",
         "replace_next": "Play next and clear queue"
+      }
+    },
+    "media_type": {
+      "options": {
+        "artist": "Artist",
+        "album": "Album",
+        "track": "Track",
+        "playlist": "Playlist",
+        "radio": "Radio"
+      }
+    },
+    "order_by": {
+      "options": {
+        "name": "Name",
+        "name_desc": "Name (desc)",
+        "sort_name": "Sort name",
+        "sort_name_desc": "Sort name (desc)",
+        "timestamp_added": "Added",
+        "timestamp_added_desc": "Added (desc)",
+        "last_played": "Last played",
+        "last_played_desc": "Last played (desc)",
+        "play_count": "Play count",
+        "play_count_desc": "Play count (desc)",
+        "year": "Year",
+        "year_desc": "Year (desc)",
+        "position": "Position",
+        "position_desc": "Position (desc)",
+        "artist_name": "Artist name",
+        "artist_name_desc": "Artist name (desc)",
+        "random": "Random",
+        "random_play_count": "Random + least played"
+      }
+    },
+    "album_type": {
+      "options": {
+        "album": "Album",
+        "single": "Single",
+        "ep": "EP",
+        "compilation": "Compilation",
+        "unknown": "Unknown"
       }
     }
   }

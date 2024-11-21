@@ -25,7 +25,7 @@ from homeassistant.helpers.issue_registry import (
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, LOGGER
-from .services import register_services
+from .services import register_actions
 
 if TYPE_CHECKING:
     from music_assistant_models.event import MassEvent
@@ -49,8 +49,7 @@ class MusicAssistantEntryData:
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Music Assistant component."""
-    # register our (custom) services
-    register_services(hass)
+    register_actions(hass)
     return True
 
 
