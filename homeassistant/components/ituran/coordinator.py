@@ -16,27 +16,28 @@ from .const import CONF_ID_OR_PASSPORT, CONF_MOBILE_ID, CONF_PHONE_NUMBER, DOMAI
 
 _LOGGER = logging.getLogger(__name__)
 
+type IturanConfigEntry = ConfigEntry[IturanDataUpdateCoordinator]
+
 
 class IturanDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Vehicle]]):
     """Class to manage fetching Ituran data."""
 
+    config_entry: IturanConfigEntry
     ituran: Ituran
 
     def __init__(self, hass: HomeAssistant, *, entry: ConfigEntry) -> None:
-        """Initialize account-wide BMW data updater."""
-        self.ituran = Ituran(
-            entry.data[CONF_ID_OR_PASSPORT],
-            entry.data[CONF_PHONE_NUMBER],
-            entry.data[CONF_MOBILE_ID],
-        )
-        self._entry = entry
-
+        """Initialize account-wide Ituran data updater."""
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}-{entry.data[CONF_ID_OR_PASSPORT]}",
             update_interval=timedelta(seconds=300),
             config_entry=entry,
+        )
+        self.ituran = Ituran(
+            entry.data[CONF_ID_OR_PASSPORT],
+            entry.data[CONF_PHONE_NUMBER],
+            entry.data[CONF_MOBILE_ID],
         )
 
     async def _async_update_data(self) -> dict[str, Vehicle]:
@@ -58,10 +59,10 @@ class IturanDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Vehicle]]):
         account_vehicles = {(DOMAIN, license_plate) for license_plate in data}
         device_registry = dr.async_get(self.hass)
         device_entries = dr.async_entries_for_config_entry(
-            device_registry, config_entry_id=self._entry.entry_id
+            device_registry, config_entry_id=self.config_entry.entry_id
         )
         for device in device_entries:
             if not device.identifiers.intersection(account_vehicles):
                 device_registry.async_update_device(
-                    device.id, remove_config_entry_id=self._entry.entry_id
+                    device.id, remove_config_entry_id=self.config_entry.entry_id
                 )

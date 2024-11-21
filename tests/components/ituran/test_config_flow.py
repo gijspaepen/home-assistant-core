@@ -1,10 +1,9 @@
 """Test the Ituran config flow."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock
 
 from pyituran.exceptions import IturanApiError, IturanAuthError
 
-from homeassistant import config_entries
 from homeassistant.components.ituran.const import (
     CONF_ID_OR_PASSPORT,
     CONF_MOBILE_ID,
@@ -12,371 +11,334 @@ from homeassistant.components.ituran.const import (
     CONF_PHONE_NUMBER,
     DOMAIN,
 )
+from homeassistant.config_entries import SOURCE_USER, ConfigFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from . import MOCK_CONFIG_DATA
+from . import setup_integration
+from .const import MOCK_CONFIG_DATA
+
+from tests.common import MockConfigEntry
 
 
-async def test_form(hass: HomeAssistant) -> None:
-    """Test we get the form."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+async def __do_successful_user_step(
+    hass: HomeAssistant, result: ConfigFlowResult, mock_ituran: AsyncMock
+):
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+        },
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
 
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            return_value=False,
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.authenticate",
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["step_id"] == "otp"
+    assert result2["errors"] == {}
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {}
+    return result2
 
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_OTP: "123456",
-            },
-        )
-        await hass.async_block_till_done()
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
+async def __do_successful_otp_step(
+    hass: HomeAssistant,
+    result: ConfigFlowResult,
+    mock_ituran: AsyncMock,
+    reauth: bool = False,
+):
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_OTP: "123456",
+        },
+    )
+
+    if reauth:
+        assert result2["type"] is FlowResultType.ABORT
+    else:
+        assert result2["type"] is FlowResultType.CREATE_ENTRY
+        assert result2["title"] == f"Ituran {MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]}"
         assert (
-            result["data"][CONF_ID_OR_PASSPORT] == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
+            result2["data"][CONF_ID_OR_PASSPORT]
+            == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
         )
-        assert result["data"][CONF_PHONE_NUMBER] == MOCK_CONFIG_DATA[CONF_PHONE_NUMBER]
-        assert result["data"][CONF_MOBILE_ID] is not None
+        assert result2["data"][CONF_PHONE_NUMBER] == MOCK_CONFIG_DATA[CONF_PHONE_NUMBER]
+        assert result2["data"][CONF_MOBILE_ID] is not None
+        assert result2["result"].unique_id == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
+    assert len(mock_ituran.is_authenticated.mock_calls) > 0
+    assert len(mock_ituran.authenticate.mock_calls) > 0
+
+    return result2
 
 
-async def test_form_invalid_auth(hass: HomeAssistant) -> None:
-    """Test we handle invalid auth."""
+async def test_full_user_flow(
+    hass: HomeAssistant, mock_ituran: AsyncMock, mock_setup_entry: AsyncMock
+) -> None:
+    """Test the full user configuration flow."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
 
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            return_value=False,
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-            side_effect=IturanAuthError,
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
 
-    assert result["type"] == FlowResultType.FORM
+    result2 = await __do_successful_user_step(hass, result, mock_ituran)
+    await __do_successful_otp_step(hass, result2, mock_ituran)
+
+
+async def test_invalid_auth(
+    hass: HomeAssistant, mock_ituran: AsyncMock, mock_setup_entry: AsyncMock
+) -> None:
+    """Test invalid credentials configuration flow."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    mock_ituran.request_otp.side_effect = IturanAuthError
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
     assert result["errors"] == {"base": "invalid_auth"}
 
-    # Make sure the config flow tests continue to the next step so
-    # we can show the config flow is able to recover from an error.
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            return_value=False,
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "otp"
-    assert result["errors"] == {}
+    mock_ituran.request_otp.side_effect = None
+    result2 = await __do_successful_user_step(hass, result, mock_ituran)
+    await __do_successful_otp_step(hass, result2, mock_ituran)
 
 
-async def test_form_cannot_connect(hass: HomeAssistant) -> None:
-    """Test we handle cannot connect error."""
+async def test_invalid_otp(
+    hass: HomeAssistant, mock_ituran: AsyncMock, mock_setup_entry: AsyncMock
+) -> None:
+    """Test invalid OTP configuration flow."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
 
-    with patch(
-        "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-        side_effect=IturanApiError,
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
 
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {"base": "cannot_connect"}
+    result2 = await __do_successful_user_step(hass, result, mock_ituran)
 
-    # Make sure the config flow tests continue to the next step so
-    # we can show the config flow is able to recover from an error.
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            return_value=False,
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    mock_ituran.authenticate.side_effect = IturanAuthError
+    result3 = await hass.config_entries.flow.async_configure(
+        result2["flow_id"],
+        user_input={
+            CONF_OTP: "123456",
+        },
+    )
 
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "otp"
-    assert result["errors"] == {}
+    assert result3["type"] is FlowResultType.FORM
+    assert result3["errors"] == {"base": "invalid_otp"}
+
+    mock_ituran.authenticate.side_effect = None
+    await __do_successful_otp_step(hass, result3, mock_ituran)
 
 
-async def test_form_invalid_otp(hass: HomeAssistant) -> None:
-    """Test we handle invalid OTP."""
+async def test_cannot_connect(
+    hass: HomeAssistant, mock_ituran: AsyncMock, mock_setup_entry: AsyncMock
+) -> None:
+    """Test connection errors during configuration flow."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
 
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            return_value=False,
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.authenticate",
-            side_effect=[IturanAuthError, None],
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {}
+    mock_ituran.request_otp.side_effect = IturanApiError
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+        },
+    )
 
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_OTP: "123456",
-            },
-        )
-        await hass.async_block_till_done()
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["step_id"] == "user"
+    assert result2["errors"] == {"base": "cannot_connect"}
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {"base": "invalid_otp"}
+    mock_ituran.request_otp.side_effect = None
+    result3 = await __do_successful_user_step(hass, result2, mock_ituran)
 
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_OTP: "123456",
-            },
-        )
-        await hass.async_block_till_done()
+    mock_ituran.authenticate.side_effect = IturanApiError
+    result4 = await hass.config_entries.flow.async_configure(
+        result3["flow_id"],
+        user_input={
+            CONF_OTP: "123456",
+        },
+    )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert (
-            result["data"][CONF_ID_OR_PASSPORT] == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
-        )
-        assert result["data"][CONF_PHONE_NUMBER] == MOCK_CONFIG_DATA[CONF_PHONE_NUMBER]
-        assert result["data"][CONF_MOBILE_ID] is not None
+    assert result4["type"] is FlowResultType.FORM
+    assert result4["errors"] == {"base": "cannot_connect"}
+
+    mock_ituran.authenticate.side_effect = None
+    await __do_successful_otp_step(hass, result4, mock_ituran)
 
 
-async def test_form_already_authenticated(hass: HomeAssistant) -> None:
-    """Test we handle already authenticated credentials."""
+async def test_unexpected_errors(
+    hass: HomeAssistant, mock_ituran: AsyncMock, mock_setup_entry: AsyncMock
+) -> None:
+    """Test unexpected errors during configuration flow."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
 
-    with patch(
-        "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-        return_value=True,
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-                CONF_MOBILE_ID: MOCK_CONFIG_DATA[CONF_MOBILE_ID],
-            },
-        )
-        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
 
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_ID_OR_PASSPORT] == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
-    assert result["data"][CONF_PHONE_NUMBER] == MOCK_CONFIG_DATA[CONF_PHONE_NUMBER]
-    assert result["data"][CONF_MOBILE_ID] == MOCK_CONFIG_DATA[CONF_MOBILE_ID]
+    mock_ituran.request_otp.side_effect = Exception
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+        },
+    )
+
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["step_id"] == "user"
+    assert result2["errors"] == {"base": "unknown"}
+
+    mock_ituran.request_otp.side_effect = None
+    result3 = await __do_successful_user_step(hass, result2, mock_ituran)
+
+    mock_ituran.authenticate.side_effect = Exception
+    result4 = await hass.config_entries.flow.async_configure(
+        result3["flow_id"],
+        user_input={
+            CONF_OTP: "123456",
+        },
+    )
+
+    assert result4["type"] is FlowResultType.FORM
+    assert result4["errors"] == {"base": "unknown"}
+
+    mock_ituran.authenticate.side_effect = None
+    await __do_successful_otp_step(hass, result4, mock_ituran)
 
 
-async def test_form_unexpected_errors(hass: HomeAssistant) -> None:
-    """Test we handle unexpected errors."""
+async def test_already_authenticated(
+    hass: HomeAssistant, mock_ituran: AsyncMock, mock_setup_entry: AsyncMock
+) -> None:
+    """Test user already authenticated configuration flow."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
 
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            return_value=False,
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-            side_effect=[Exception, None],
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.authenticate",
-            side_effect=Exception,
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "user"
-        assert result["errors"] == {"base": "unknown"}
+    mock_ituran.is_authenticated.return_value = True
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+            CONF_MOBILE_ID: MOCK_CONFIG_DATA[CONF_MOBILE_ID],
+        },
+    )
 
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {}
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_OTP: "123456",
-            },
-        )
-        await hass.async_block_till_done()
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {"base": "unknown"}
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert result2["title"] == f"Ituran {MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]}"
+    assert result2["data"][CONF_ID_OR_PASSPORT] == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
+    assert result2["data"][CONF_PHONE_NUMBER] == MOCK_CONFIG_DATA[CONF_PHONE_NUMBER]
+    assert result2["data"][CONF_MOBILE_ID] == MOCK_CONFIG_DATA[CONF_MOBILE_ID]
+    assert result2["result"].unique_id == MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT]
 
 
-async def test_form_cannot_connect_errors(hass: HomeAssistant) -> None:
-    """Test we handle Ituran API errors."""
+async def test_reauth(
+    hass: HomeAssistant,
+    mock_ituran: AsyncMock,
+    mock_setup_entry: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test reauthenticating."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
+    result2 = await __do_successful_user_step(hass, result, mock_ituran)
+    await __do_successful_otp_step(hass, result2, mock_ituran)
 
-    with (
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.is_authenticated",
-            side_effect=[IturanApiError, None],
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.request_otp",
-        ),
-        patch(
-            "homeassistant.components.ituran.config_flow.Ituran.authenticate",
-            side_effect=IturanApiError,
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    await setup_integration(hass, mock_config_entry)
+    result4 = await mock_config_entry.start_reauth_flow(hass)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "user"
-        assert result["errors"] == {"base": "cannot_connect"}
+    assert result4["type"] is FlowResultType.FORM
+    assert result4["step_id"] == "user"
+    assert result4["errors"] == {}
 
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
-                CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
-            },
-        )
-        await hass.async_block_till_done()
+    result5 = await __do_successful_user_step(hass, result4, mock_ituran)
+    await __do_successful_otp_step(hass, result5, mock_ituran, True)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {}
 
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_OTP: "123456",
-            },
-        )
-        await hass.async_block_till_done()
+async def test_reauth_when_already_authenticated(
+    hass: HomeAssistant,
+    mock_ituran: AsyncMock,
+    mock_setup_entry: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test reauthenticating when already authenticated."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result2 = await __do_successful_user_step(hass, result, mock_ituran)
+    await __do_successful_otp_step(hass, result2, mock_ituran)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "otp"
-        assert result["errors"] == {"base": "cannot_connect"}
+    await setup_integration(hass, mock_config_entry)
+    result4 = await mock_config_entry.start_reauth_flow(hass)
+
+    assert result4["type"] is FlowResultType.FORM
+    assert result4["step_id"] == "user"
+    assert result4["errors"] == {}
+
+    mock_ituran.is_authenticated.return_value = True
+    result5 = await hass.config_entries.flow.async_configure(
+        result4["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT],
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+            CONF_MOBILE_ID: MOCK_CONFIG_DATA[CONF_MOBILE_ID],
+        },
+    )
+
+    assert result5["type"] is FlowResultType.ABORT
+
+
+async def test_reauth_with_different_id(
+    hass: HomeAssistant,
+    mock_ituran: AsyncMock,
+    mock_setup_entry: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test reauthenticating with a different ID."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result2 = await __do_successful_user_step(hass, result, mock_ituran)
+    await __do_successful_otp_step(hass, result2, mock_ituran)
+
+    await setup_integration(hass, mock_config_entry)
+    result4 = await mock_config_entry.start_reauth_flow(hass)
+
+    assert result4["type"] is FlowResultType.FORM
+    assert result4["step_id"] == "user"
+    assert result4["errors"] == {}
+
+    result5 = await hass.config_entries.flow.async_configure(
+        result4["flow_id"],
+        user_input={
+            CONF_ID_OR_PASSPORT: MOCK_CONFIG_DATA[CONF_ID_OR_PASSPORT] + "1",
+            CONF_PHONE_NUMBER: MOCK_CONFIG_DATA[CONF_PHONE_NUMBER],
+        },
+    )
+
+    assert result5["type"] is FlowResultType.ABORT
+    assert result5["reason"] == "id_mismatch"

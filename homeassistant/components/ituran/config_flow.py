@@ -10,7 +10,12 @@ from pyituran import Ituran
 from pyituran.exceptions import IturanApiError, IturanAuthError
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    SOURCE_RECONFIGURE,
+    ConfigFlow,
+    ConfigFlowResult,
+)
 
 from .const import (
     CONF_ID_OR_PASSPORT,
@@ -48,17 +53,19 @@ class IturanConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the inial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            if self.unique_id is None:
-                await self.async_set_unique_id(user_input[CONF_ID_OR_PASSPORT])
+            await self.async_set_unique_id(user_input[CONF_ID_OR_PASSPORT])
+            if self.source in {SOURCE_REAUTH, SOURCE_RECONFIGURE}:
+                self._abort_if_unique_id_mismatch(reason="id_mismatch")
+            else:
                 self._abort_if_unique_id_configured()
 
+            ituran = Ituran(
+                user_input[CONF_ID_OR_PASSPORT],
+                user_input[CONF_PHONE_NUMBER],
+                user_input.get(CONF_MOBILE_ID),
+            )
+            user_input[CONF_MOBILE_ID] = ituran.mobile_id
             try:
-                ituran = Ituran(
-                    user_input[CONF_ID_OR_PASSPORT],
-                    user_input[CONF_PHONE_NUMBER],
-                    user_input.get(CONF_MOBILE_ID),
-                )
-                user_input[CONF_MOBILE_ID] = ituran.mobile_id
                 authenticated = await ituran.is_authenticated()
                 if not authenticated:
                     await ituran.request_otp()
@@ -71,6 +78,10 @@ class IturanConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 if authenticated:
+                    if self.source == SOURCE_REAUTH:
+                        return self.async_update_reload_and_abort(
+                            self._get_reauth_entry(), data=user_input
+                        )
                     return self.async_create_entry(
                         title=f"Ituran {user_input[CONF_ID_OR_PASSPORT]}",
                         data=user_input,
@@ -94,12 +105,12 @@ class IturanConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the inial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            ituran = Ituran(
+                self._user_info[CONF_ID_OR_PASSPORT],
+                self._user_info[CONF_PHONE_NUMBER],
+                self._user_info[CONF_MOBILE_ID],
+            )
             try:
-                ituran = Ituran(
-                    self._user_info[CONF_ID_OR_PASSPORT],
-                    self._user_info[CONF_PHONE_NUMBER],
-                    self._user_info[CONF_MOBILE_ID],
-                )
                 await ituran.authenticate(user_input[CONF_OTP])
             except IturanApiError:
                 errors["base"] = "cannot_connect"
@@ -109,6 +120,10 @@ class IturanConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
+                if self.source == SOURCE_REAUTH:
+                    return self.async_update_reload_and_abort(
+                        self._get_reauth_entry(), data=self._user_info
+                    )
                 return self.async_create_entry(
                     title=f"Ituran {self._user_info[CONF_ID_OR_PASSPORT]}",
                     data=self._user_info,
