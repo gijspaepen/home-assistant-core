@@ -100,10 +100,18 @@
         }
       }
     },
+    "get_queue": {
+      "name": "Get playerQueue details (advanced)",
+      "description": "Get the full details of the currently active queue of a Music Assistant player."
+    },
     "search": {
       "name": "Search Music Assistant",
       "description": "Perform a global search on the Music Assistant library and all providers.",
       "fields": {
+        "config_entry_id": {
+          "name": "Music Assistant instance",
+          "description": "Select the Music Assistant instance to perform the search on."
+        },
         "name": {
           "name": "Search name",
           "description": "The name/title to search for."
@@ -130,14 +138,14 @@
         }
       }
     },
-    "get_queue": {
-      "name": "Get playerQueue details (advanced)",
-      "description": "Get the full details of the currently active queue of a Music Assistant player."
-    },
     "get_library": {
       "name": "Get Library items",
       "description": "Get items from a Music Assistant Library.",
       "fields": {
+        "config_entry_id": {
+          "name": "Music Assistant instance",
+          "description": "Select the Music Assistant instance on which to query the library."
+        },
         "media_type": {
           "name": "Media type",
           "description": "The media type for which to request details for."

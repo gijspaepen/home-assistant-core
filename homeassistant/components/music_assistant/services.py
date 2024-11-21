@@ -16,7 +16,7 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN
@@ -40,17 +40,20 @@ ATTR_OFFSET = "offset"
 ATTR_ORDER_BY = "order_by"
 ATTR_ALBUM_TYPE = "album_type"
 ATTR_ALBUM_ARTISTS_ONLY = "album_artists_only"
+ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 
 
 @callback
-def get_music_assistant_client(hass: HomeAssistant) -> MusicAssistantClient:
+def get_music_assistant_client(
+    hass: HomeAssistant, config_entry_id: str
+) -> MusicAssistantClient:
     """Get the (first) Music Assistant client from the (loaded) config entries."""
-    entry: MusicAssistantConfigEntry
-    for entry in hass.config_entries.async_entries(DOMAIN, False, False):
-        if entry.state != ConfigEntryState.LOADED:
-            continue
-        return entry.runtime_data.mass
-    raise HomeAssistantError("Music Assistant is not loaded")
+    entry: MusicAssistantConfigEntry | None
+    if not (entry := hass.config_entries.async_get_entry(config_entry_id)):
+        raise ServiceValidationError("Entry not found")
+    if entry.state is not ConfigEntryState.LOADED:
+        raise ServiceValidationError("Entry not loaded")
+    return entry.runtime_data.mass
 
 
 @callback
@@ -65,7 +68,7 @@ def register_search_action(hass: HomeAssistant) -> None:
 
     async def handle_search(call: ServiceCall) -> ServiceResponse:
         """Handle queue_command action."""
-        mass = get_music_assistant_client(hass)
+        mass = get_music_assistant_client(hass, call.data[ATTR_CONFIG_ENTRY_ID])
         search_name = call.data[ATTR_SEARCH_NAME]
         search_artist = call.data.get(ATTR_SEARCH_ARTIST)
         search_album = call.data.get(ATTR_SEARCH_ALBUM)
@@ -90,6 +93,7 @@ def register_search_action(hass: HomeAssistant) -> None:
         handle_search,
         schema=vol.Schema(
             {
+                vol.Required(ATTR_CONFIG_ENTRY_ID): str,
                 vol.Required(ATTR_SEARCH_NAME): cv.string,
                 vol.Optional(ATTR_MEDIA_TYPE): vol.All(
                     cv.ensure_list, [vol.Coerce(MediaType)]
@@ -109,7 +113,7 @@ def register_get_library_action(hass: HomeAssistant) -> None:
 
     async def handle_get_library(call: ServiceCall) -> ServiceResponse:
         """Handle get_library action."""
-        mass = get_music_assistant_client(hass)
+        mass = get_music_assistant_client(hass, call.data[ATTR_CONFIG_ENTRY_ID])
         media_type = call.data[ATTR_MEDIA_TYPE]
         base_params = {
             "favorite": call.data.get(ATTR_FAVORITE),
@@ -152,6 +156,7 @@ def register_get_library_action(hass: HomeAssistant) -> None:
         handle_get_library,
         schema=vol.Schema(
             {
+                vol.Required(ATTR_CONFIG_ENTRY_ID): str,
                 vol.Required(ATTR_MEDIA_TYPE): vol.Coerce(MediaType),
                 vol.Optional(ATTR_FAVORITE): cv.boolean,
                 vol.Optional(ATTR_SEARCH): cv.string,

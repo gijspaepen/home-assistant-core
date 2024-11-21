@@ -98,8 +98,21 @@ transfer_queue:
       selector:
         boolean:
 
+get_queue:
+  target:
+    entity:
+      domain: media_player
+      integration: music_assistant
+      supported_features:
+        - media_player.MediaPlayerEntityFeature.PLAY_MEDIA
+
 search:
   fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: music_assistant
     name:
       required: true
       example: "We Are The Champions"
@@ -145,16 +158,13 @@ search:
       selector:
         boolean:
 
-get_queue:
-  target:
-    entity:
-      domain: media_player
-      integration: music_assistant
-      supported_features:
-        - media_player.MediaPlayerEntityFeature.PLAY_MEDIA
-
 get_library:
   fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: music_assistant
     media_type:
       required: true
       example: "playlist"
