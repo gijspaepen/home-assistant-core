@@ -17,10 +17,7 @@ rules:
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
-  entity-event-setup:
-    status: exempt
-    comment: |
-      Entities of this integration does not explicitly subscribe to events.
+  entity-event-setup: done
   entity-unique-id: done
   has-entity-name: done
   runtime-data: done
@@ -53,7 +50,10 @@ rules:
   entity-device-class: done
   devices: done
   entity-category: done
-  entity-disabled-by-default: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: |
+      This integration doesn't have enough / noisy entities that warrant being disabled by default.
   discovery: done
   stale-devices:
     status: exempt
@@ -82,5 +82,8 @@ rules:
 
   # Platinum
   async-dependency: done
-  inject-websession: done
+  inject-websession:
+    status: exempt
+    comment: |
+      This integration uses websockets exclusively and does not make http calls.
   strict-typing: done
