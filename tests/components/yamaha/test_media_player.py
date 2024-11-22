@@ -8,7 +8,6 @@ from homeassistant.components.media_player import DOMAIN as MP_DOMAIN
 from homeassistant.components.yamaha import media_player as yamaha
 from homeassistant.components.yamaha.const import DOMAIN
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.discovery import async_load_platform
 from homeassistant.setup import async_setup_component
 
 CONFIG = {"media_player": {"platform": "yamaha", "host": "127.0.0.1"}}
@@ -48,7 +47,10 @@ def device_fixture(main_zone):
     device = FakeYamahaDevice("http://receiver", "Receiver", zones=[main_zone])
     with (
         patch("rxv.RXV", return_value=device),
-        patch("rxv.find", return_value=[device]),
+        patch(
+            "homeassistant.components.yamaha.YamahaConfigInfo.get_upnp_serial_and_model",
+            return_value=("1234567890", "MC20"),
+        ),
     ):
         yield device
 
@@ -61,7 +63,10 @@ def device2_fixture(main_zone):
     )
     with (
         patch("rxv.RXV", return_value=device),
-        patch("rxv.find", return_value=[device]),
+        patch(
+            "homeassistant.components.yamaha.YamahaConfigInfo.get_upnp_serial_and_model",
+            return_value=("0987654321", "AX100"),
+        ),
     ):
         yield device
 
@@ -76,9 +81,8 @@ async def test_setup_host(hass: HomeAssistant, device, device2, main_zone) -> No
     assert state is not None
     assert state.state == "off"
 
-    with patch("rxv.find", return_value=[device2]):
-        assert await async_setup_component(hass, MP_DOMAIN, CONFIG)
-        await hass.async_block_till_done()
+    assert await async_setup_component(hass, MP_DOMAIN, CONFIG)
+    await hass.async_block_till_done()
 
     state = hass.states.get("media_player.yamaha_receiver_main_zone")
 
@@ -97,41 +101,7 @@ async def test_setup_host(hass: HomeAssistant, device, device2, main_zone) -> No
 async def test_setup_find_errors(hass: HomeAssistant, device, main_zone, error) -> None:
     """Test set up integration encountering an Error."""
 
-    with patch("rxv.find", side_effect=error):
-        assert await async_setup_component(hass, MP_DOMAIN, CONFIG)
-        await hass.async_block_till_done()
-
-        state = hass.states.get("media_player.yamaha_receiver_main_zone")
-
-        assert state is not None
-        assert state.state == "off"
-
-
-async def test_setup_no_host(hass: HomeAssistant, device, main_zone) -> None:
-    """Test set up integration without host."""
-    with patch("rxv.find", return_value=[device]):
-        assert await async_setup_component(
-            hass, MP_DOMAIN, {"media_player": {"platform": "yamaha"}}
-        )
-        await hass.async_block_till_done()
-
-    state = hass.states.get("media_player.yamaha_receiver_main_zone")
-
-    assert state is not None
-    assert state.state == "off"
-
-
-async def test_setup_discovery(hass: HomeAssistant, device, main_zone) -> None:
-    """Test set up integration via discovery."""
-    discovery_info = {
-        "name": "Yamaha Receiver",
-        "model_name": "Yamaha",
-        "control_url": "http://receiver",
-        "description_url": "http://receiver/description",
-    }
-    await async_load_platform(
-        hass, MP_DOMAIN, "yamaha", discovery_info, {MP_DOMAIN: {}}
-    )
+    assert await async_setup_component(hass, MP_DOMAIN, CONFIG)
     await hass.async_block_till_done()
 
     state = hass.states.get("media_player.yamaha_receiver_main_zone")
@@ -140,18 +110,10 @@ async def test_setup_discovery(hass: HomeAssistant, device, main_zone) -> None:
     assert state.state == "off"
 
 
-async def test_setup_zone_ignore(hass: HomeAssistant, device, main_zone) -> None:
+async def test_setup_no_host(hass: HomeAssistant, device, main_zone) -> None:
     """Test set up integration without host."""
     assert await async_setup_component(
-        hass,
-        MP_DOMAIN,
-        {
-            "media_player": {
-                "platform": "yamaha",
-                "host": "127.0.0.1",
-                "zone_ignore": "Main zone",
-            }
-        },
+        hass, MP_DOMAIN, {"media_player": {"platform": "yamaha"}}
     )
     await hass.async_block_till_done()
 
