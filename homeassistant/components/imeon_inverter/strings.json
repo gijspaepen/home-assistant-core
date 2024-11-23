@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Imeon Inverter",
+        "data": {
+          "inverter": "common.config_flow.data.device",
+          "address": "common.config_flow.data.ip",
+          "username": "common.config_flow.data.username",
+          "password": "common.config_flow.data.password"
+        },
+        "data_description": {
+          "inverter": "The device name",
+          "address": "The address of the inverter",
+          "username": "Your inverter login",
+          "password": "Your inverter password"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  }
+}
