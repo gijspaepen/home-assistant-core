@@ -34,10 +34,7 @@ rules:
     status: exempt
     comment: |
       This integration does not require authentication.
-  parallel-updates:
-    status: exempt
-    comment: |
-      This integration uses a push API. No parallel poll APIs necessary.
+  parallel-updates: todo
   test-coverage: todo
   integration-owner: done
   docs-installation-parameters: done
