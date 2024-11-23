@@ -29,6 +29,7 @@ from homeassistant.util.percentage import (
 
 from .const import DEVICE_LIST, DOMAIN
 from .entity import ViCareEntity
+from .types import ViCareDevice
 from .utils import get_device_serial
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +52,8 @@ class VentilationMode(enum.StrEnum):
 
     PERMANENT = "permanent"  # on, speed controlled by program (levelOne-levelFour)
     VENTILATION = "ventilation"  # activated by schedule
+    STANDBY = "standby"  # activated by schedule
+    STANDARD = "standard"  # activated by schedule
     SENSOR_DRIVEN = "sensor_driven"  # activated by schedule, override by sensor
     SENSOR_OVERRIDE = "sensor_override"  # activated by sensor
 
@@ -78,6 +81,8 @@ class VentilationMode(enum.StrEnum):
 HA_TO_VICARE_MODE_VENTILATION = {
     VentilationMode.PERMANENT: "permanent",
     VentilationMode.VENTILATION: "ventilation",
+    VentilationMode.STANDBY: "standby",
+    VentilationMode.STANDARD: "standard",
     VentilationMode.SENSOR_DRIVEN: "sensorDriven",
     VentilationMode.SENSOR_OVERRIDE: "sensorOverride",
 }
@@ -90,37 +95,50 @@ ORDERED_NAMED_FAN_SPEEDS = [
 ]
 
 
+def _build_entities(
+    device_list: list[ViCareDevice],
+) -> list[ViCareFan]:
+    """Create ViCare button entities for a device."""
+
+    entities: list[ViCareFan] = []
+
+    for device in device_list:
+        if isinstance(device.api, PyViCareVentilationDevice):
+            entities.append(
+                ViCareFan(get_device_serial(device.api), device.config, device.api)
+            )
+        elif device.api.isVentilationDevice():
+            entities.append(
+                ViCareFan(
+                    get_device_serial(device.api),
+                    device.config,
+                    device.config.asVentilation(),
+                )
+            )
+    return entities
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the ViCare fan platform."""
-
     device_list = hass.data[DOMAIN][config_entry.entry_id][DEVICE_LIST]
 
     async_add_entities(
-        [
-            ViCareFan(get_device_serial(device.api), device.config, device.api)
-            for device in device_list
-            if isinstance(device.api, PyViCareVentilationDevice)
-        ]
+        await hass.async_add_executor_job(
+            _build_entities,
+            device_list,
+        ),
+        True,
     )
 
 
 class ViCareFan(ViCareEntity, FanEntity):
     """Representation of the ViCare ventilation device."""
 
-    _attr_preset_modes = list[str](
-        [
-            VentilationMode.PERMANENT,
-            VentilationMode.VENTILATION,
-            VentilationMode.SENSOR_DRIVEN,
-            VentilationMode.SENSOR_OVERRIDE,
-        ]
-    )
     _attr_speed_count = len(ORDERED_NAMED_FAN_SPEEDS)
-    _attr_supported_features = FanEntityFeature.SET_SPEED | FanEntityFeature.PRESET_MODE
     _attr_translation_key = "ventilation"
     _enable_turn_on_off_backwards_compatibility = False
 
@@ -134,6 +152,21 @@ class ViCareFan(ViCareEntity, FanEntity):
         super().__init__(
             self._attr_translation_key, device_serial, device_config, device
         )
+        # init preset_mode
+        supported_modes = list[str](self._api.getAvailableModes())
+        self._attr_preset_modes = [
+            mode
+            for mode in VentilationMode
+            if VentilationMode.to_vicare_mode(mode) in supported_modes
+        ]
+        if len(self._attr_preset_modes) > 0:
+            self._attr_supported_features |= FanEntityFeature.PRESET_MODE
+        # init set_speed
+        supported_levels: list[str] | None = None
+        with suppress(PyViCareNotSupportedFeatureError):
+            supported_levels = self._api.getPermanentLevels()
+        if supported_levels is not None and len(supported_levels) > 0:
+            self._attr_supported_features |= FanEntityFeature.SET_SPEED
 
     def update(self) -> None:
         """Update state of fan."""
@@ -143,9 +176,14 @@ class ViCareFan(ViCareEntity, FanEntity):
                     self._api.getActiveMode()
                 )
             with suppress(PyViCareNotSupportedFeatureError):
-                self._attr_percentage = ordered_list_item_to_percentage(
-                    ORDERED_NAMED_FAN_SPEEDS, self._api.getActiveProgram()
-                )
+                ventilation_level = self._api.getVentilationLevel()
+                if ventilation_level == "unknown":
+                    self._attr_percentage = 0
+                else:
+                    self._attr_percentage = ordered_list_item_to_percentage(
+                        ORDERED_NAMED_FAN_SPEEDS,
+                        ventilation_level,
+                    )
         except RequestConnectionError:
             _LOGGER.error("Unable to retrieve data from ViCare server")
         except ValueError:
@@ -155,11 +193,11 @@ class ViCareFan(ViCareEntity, FanEntity):
         except PyViCareInvalidDataError as invalid_data_exception:
             _LOGGER.error("Invalid data from Vicare server: %s", invalid_data_exception)
 
-    @property
-    def is_on(self) -> bool | None:
-        """Return true if the entity is on."""
-        # Viessmann ventilation unit cannot be turned off
-        return True
+    # @property
+    # def is_on(self) -> bool | None:
+    #     """Return true if the entity is on."""
+    #     # Viessmann ventilation unit cannot be turned off
+    #     return True
 
     def set_percentage(self, percentage: int) -> None:
         """Set the speed of the fan, as a percentage."""
