@@ -38,7 +38,7 @@ rules:
     status: exempt
     comment: |
       This integration uses a push API. No parallel poll APIs necessary.
-  test-coverage: done
+  test-coverage: todo
   integration-owner: done
   docs-installation-parameters: done
   docs-configuration-parameters:
