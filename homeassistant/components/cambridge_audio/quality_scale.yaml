@@ -29,7 +29,7 @@ rules:
   config-entry-unloading: done
   log-when-unavailable: done
   entity-unavailable: done
-  action-exceptions: done
+  action-exceptions: todo
   reauthentication-flow:
     status: exempt
     comment: |
