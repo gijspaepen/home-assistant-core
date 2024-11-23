@@ -38,6 +38,7 @@ from .const import (
     CONF_SCENES,
     CONF_SOFTWARE_SERIAL,
     CONNECTION,
+    DEVICE_CONNECTIONS,
     DOMAIN,
     LED_PORTS,
     LOGICOP_PORTS,
@@ -237,7 +238,7 @@ def register_lcn_address_devices(
         identifiers = {(DOMAIN, generate_unique_id(config_entry.entry_id, address))}
 
         if device_config[CONF_ADDRESS][2]:  # is group
-            device_model = f"LCN group (g{address[0]:03d}{address[1]:03d})"
+            device_model = "LCN group"
             sw_version = None
         else:  # is module
             hardware_type = device_config[CONF_HARDWARE_TYPE]
@@ -245,10 +246,10 @@ def register_lcn_address_devices(
                 hardware_name = pypck.lcn_defs.HARDWARE_DESCRIPTIONS[hardware_type]
             else:
                 hardware_name = pypck.lcn_defs.HARDWARE_DESCRIPTIONS[-1]
-            device_model = f"{hardware_name} (m{address[0]:03d}{address[1]:03d})"
+            device_model = f"{hardware_name}"
             sw_version = f"{device_config[CONF_SOFTWARE_SERIAL]:06X}"
 
-        device_registry.async_get_or_create(
+        device_entry = device_registry.async_get_or_create(
             config_entry_id=config_entry.entry_id,
             identifiers=identifiers,
             via_device=host_identifiers,
@@ -257,6 +258,10 @@ def register_lcn_address_devices(
             name=device_name,
             model=device_model,
         )
+
+        hass.data[DOMAIN][config_entry.entry_id][DEVICE_CONNECTIONS][
+            device_entry.id
+        ] = get_device_connection(hass, address, config_entry)
 
 
 async def async_update_device_config(
@@ -338,6 +343,25 @@ def is_address(value: str) -> tuple[AddressType, str]:
         conn_id = matcher.group("conn_id")
         return addr, conn_id
     raise ValueError(f"{value} is not a valid address string")
+
+
+def address_to_device_id(
+    hass: HomeAssistant, address: AddressType, host_name: str | None = None
+) -> str | None:
+    """Convert LCN address to device_id."""
+    for config_entry in hass.config_entries.async_entries(DOMAIN):
+        if (host_name is None) or (config_entry.title == host_name):
+            break
+    else:
+        return None
+
+    device_connections: dict[str, DeviceConnectionType] = hass.data[DOMAIN][
+        config_entry.entry_id
+    ][DEVICE_CONNECTIONS]
+    for device_id, device_connection in device_connections.items():
+        if device_connection.addr == pypck.lcn_addr.LcnAddr(*address):
+            return device_id
+    return None
 
 
 def is_states_string(states_string: str) -> list[str]:
