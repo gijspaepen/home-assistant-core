@@ -911,7 +911,7 @@ class SectionConfig(TypedDict, total=False):
 
     collapsed: bool
     multiple: bool
-    default: list[Any]
+    default: list[Any] | None
 
 
 class section:
