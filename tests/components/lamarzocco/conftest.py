@@ -113,11 +113,14 @@ def mock_cloud_client(
         client.get_customer_fleet.return_value = {
             mock_device_info.serial_number: mock_device_info
         }
+
         yield client
 
 
 @pytest.fixture
-def mock_lamarzocco(device_fixture: MachineModel) -> Generator[MagicMock]:
+def mock_lamarzocco(
+    device_fixture: MachineModel, mock_cloud_client: Generator[MagicMock]
+) -> Generator[MagicMock]:
     """Return a mocked LM client."""
     model = device_fixture
 
@@ -153,6 +156,7 @@ def mock_lamarzocco(device_fixture: MachineModel) -> Generator[MagicMock]:
 
         lamarzocco.firmware[FirmwareType.GATEWAY].latest_version = "v3.5-rc3"
         lamarzocco.firmware[FirmwareType.MACHINE].latest_version = "1.55"
+        lamarzocco.cloud_client = mock_cloud_client
 
         yield lamarzocco
 
