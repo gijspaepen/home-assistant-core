@@ -15,11 +15,18 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from . import DOMAIN
 
 CONF_BOOLEAN = "bool"
 CONF_INT = "int"
+CONF_SELECT_POWER = "select_power"
+CONF_SELECT_POWER_MODES = ["normal", "high", "awesome"]
 
 
 class KitchenSinkConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -70,6 +77,8 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(data=self.config_entry.options | user_input)
 
+        section_1 = self.config_entry.options.get("section_1", {})
+
         return self.async_show_form(
             step_id="options_1",
             data_schema=vol.Schema(
@@ -79,14 +88,25 @@ class OptionsFlowHandler(OptionsFlow):
                             {
                                 vol.Optional(
                                     CONF_BOOLEAN,
-                                    default=self.config_entry.options.get(
-                                        CONF_BOOLEAN, False
-                                    ),
+                                    default=section_1.get(CONF_BOOLEAN, False),
                                 ): bool,
                                 vol.Optional(
                                     CONF_INT,
-                                    default=self.config_entry.options.get(CONF_INT, 10),
+                                    default=section_1.get(CONF_INT, 10),
                                 ): int,
+                                vol.Optional(
+                                    CONF_SELECT_POWER,
+                                    default=section_1.get(
+                                        CONF_SELECT_POWER, CONF_SELECT_POWER_MODES[0]
+                                    ),
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=CONF_SELECT_POWER_MODES,
+                                        translation_key=CONF_SELECT_POWER,
+                                        multiple=False,
+                                        mode=SelectSelectorMode.LIST,
+                                    )
+                                ),
                             }
                         ),
                         {"collapsed": False},
