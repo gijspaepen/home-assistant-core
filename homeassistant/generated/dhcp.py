@@ -612,6 +612,18 @@ DHCP: Final[list[dict[str, str | bool]]] = [
         "macaddress": "001E0C*",
     },
     {
+        "domain": "swidget",
+        "registered_devices": True,
+    },
+    {
+        "domain": "swidget",
+        "macaddress": "24A160*",
+    },
+    {
+        "domain": "swidget",
+        "macaddress": "94B97eE",
+    },
+    {
         "domain": "tado",
         "hostname": "tado*",
     },
