@@ -86,6 +86,7 @@ from .const import (
     DEFAULT_WILL,
     DEFAULT_WS_PATH,
     DOMAIN,
+    MQTT_UNIQUE_ID,
     SUPPORTED_PROTOCOLS,
     TRANSPORT_TCP,
     TRANSPORT_WEBSOCKETS,
@@ -482,6 +483,7 @@ class FlowHandler(ConfigFlow, domain=DOMAIN):
 
             if can_connect:
                 validated_user_input[CONF_DISCOVERY] = DEFAULT_DISCOVERY
+                await self.async_set_unique_id(MQTT_UNIQUE_ID)
                 return self.async_create_entry(
                     title=validated_user_input[CONF_BROKER],
                     data=validated_user_input,
