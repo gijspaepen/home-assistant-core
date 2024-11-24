@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
-from http import HTTPStatus
 import logging
 from typing import Any
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientError
+from habiticalib import Habitica, HabiticaException, TaskFilter, TooManyRequestsError
+from habiticalib.types import ContentData, TaskData, UserData
 from habitipy.aio import HabitipyAsync
 
 from homeassistant.config_entries import ConfigEntry
@@ -25,10 +26,10 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class HabiticaData:
-    """Coordinator data class."""
+    """Habitica data."""
 
-    user: dict[str, Any]
-    tasks: list[dict]
+    user: UserData
+    tasks: list[TaskData]
 
 
 class HabiticaDataUpdateCoordinator(DataUpdateCoordinator[HabiticaData]):
@@ -36,7 +37,9 @@ class HabiticaDataUpdateCoordinator(DataUpdateCoordinator[HabiticaData]):
 
     config_entry: ConfigEntry
 
-    def __init__(self, hass: HomeAssistant, habitipy: HabitipyAsync) -> None:
+    def __init__(
+        self, hass: HomeAssistant, habitica: Habitica, habitipy: HabitipyAsync
+    ) -> None:
         """Initialize the Habitica data coordinator."""
         super().__init__(
             hass,
@@ -51,24 +54,27 @@ class HabiticaDataUpdateCoordinator(DataUpdateCoordinator[HabiticaData]):
             ),
         )
         self.api = habitipy
-        self.content: dict[str, Any] = {}
+        self.habitica = habitica
+        self.content: ContentData
 
     async def _async_update_data(self) -> HabiticaData:
         try:
-            user_response = await self.api.user.get()
-            tasks_response = await self.api.tasks.user.get()
-            tasks_response.extend(await self.api.tasks.user.get(type="completedTodos"))
-            if not self.content:
-                self.content = await self.api.content.get(
-                    language=user_response["preferences"]["language"]
-                )
-        except ClientResponseError as error:
-            if error.status == HTTPStatus.TOO_MANY_REQUESTS:
-                _LOGGER.debug("Rate limit exceeded, will try again later")
-                return self.data
-            raise UpdateFailed(f"Unable to connect to Habitica: {error}") from error
-
-        return HabiticaData(user=user_response, tasks=tasks_response)
+            user = (await self.habitica.get_user()).data
+            tasks = (await self.habitica.get_tasks()).data
+            completed_todos = (
+                await self.habitica.get_tasks(TaskFilter.COMPLETED_TODOS)
+            ).data
+            if not getattr(self, "content", None):
+                self.content = (
+                    await self.habitica.get_content(user.preferences.language)
+                ).data
+        except TooManyRequestsError:
+            _LOGGER.debug("Rate limit exceeded, will try again later")
+            return self.data
+        except (HabiticaException, ClientError) as e:
+            raise UpdateFailed(f"Unable to connect to Habitica: {e}") from e
+        else:
+            return HabiticaData(user=user, tasks=tasks + completed_todos)
 
     async def execute(
         self, func: Callable[[HabiticaDataUpdateCoordinator], Any]
@@ -77,12 +83,12 @@ class HabiticaDataUpdateCoordinator(DataUpdateCoordinator[HabiticaData]):
 
         try:
             await func(self)
-        except ClientResponseError as e:
-            if e.status == HTTPStatus.TOO_MANY_REQUESTS:
-                raise ServiceValidationError(
-                    translation_domain=DOMAIN,
-                    translation_key="setup_rate_limit_exception",
-                ) from e
+        except TooManyRequestsError as e:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="setup_rate_limit_exception",
+            ) from e
+        except (HabiticaException, ClientError) as e:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="service_call_exception",
