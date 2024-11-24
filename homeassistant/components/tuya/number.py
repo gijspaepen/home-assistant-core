@@ -9,7 +9,7 @@ from homeassistant.components.number import (
     NumberEntity,
     NumberEntityDescription,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfLength, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -290,6 +290,52 @@ NUMBERS: dict[str, tuple[NumberEntityDescription, ...]] = {
             key=DPCode.TEMP_SET,
             translation_key="temperature",
             device_class=NumberDeviceClass.TEMPERATURE,
+        ),
+    ),
+    # Tank Level Sensor
+    # Note: Undocumented
+    "ywcgq": (
+        NumberEntityDescription(
+            key=DPCode.MAX_SET,
+            translation_key="liquid_high_level",
+            entity_category=EntityCategory.CONFIG,
+            native_unit_of_measurement=PERCENTAGE,
+            icon="mdi:arrow-collapse-up",
+            native_min_value=0,
+            native_max_value=100,
+            native_step=1,
+        ),
+        NumberEntityDescription(
+            key=DPCode.MINI_SET,
+            translation_key="liquid_low_level",
+            entity_category=EntityCategory.CONFIG,
+            native_unit_of_measurement=PERCENTAGE,
+            icon="mdi:arrow-collapse-down",
+            native_min_value=0,
+            native_max_value=100,
+            native_step=1,
+        ),
+        NumberEntityDescription(
+            key=DPCode.INSTALLATION_HEIGHT,
+            translation_key="installation_height",
+            entity_category=EntityCategory.CONFIG,
+            device_class=NumberDeviceClass.DISTANCE,
+            native_unit_of_measurement=UnitOfLength.METERS,
+            icon="mdi:human-male-height",
+            native_min_value=100,
+            native_max_value=3000,
+            native_step=1,
+        ),
+        NumberEntityDescription(
+            key=DPCode.LIQUID_DEPTH_MAX,
+            translation_key="maximum_depth",
+            entity_category=EntityCategory.CONFIG,
+            device_class=NumberDeviceClass.DISTANCE,
+            native_unit_of_measurement=UnitOfLength.METERS,
+            icon="mdi:wave-arrow-up",
+            native_min_value=100,
+            native_max_value=2900,
+            native_step=1,
         ),
     ),
 }
