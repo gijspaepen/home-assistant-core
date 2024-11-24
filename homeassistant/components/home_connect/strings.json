@@ -274,6 +274,9 @@
       "program_finish_time": {
         "name": "Program finish time"
       },
+      "active_program": {
+        "name": "Active Program"
+      },
       "operation_state": {
         "name": "Operation state",
         "state": {
